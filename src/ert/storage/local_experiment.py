@@ -857,3 +857,6 @@ class LocalExperiment(BaseMode):
         combined_df, _, _ = self.export_dataframes()
         combined_df.write_csv(full_path)
         return full_path
+
+    def status_snapshot_path(self, iteration: int) -> Path:
+        return self._path / "status" / f"iteration-{iteration}.json"
