@@ -214,26 +214,24 @@ class PlotTools:
                 hover_color=hover_color,
                 disable_values=disable_values,
             )
-        except TypeError as e:
+        except (TypeError, ValueError) as e:
             logger.warning(f"Failed to create tooltip manager: {e}")
             return
 
-        except ValueError as e:
-            logger.warning(f"Failed to create tooltip manager: {e}")
-            return
+        errors_flagged: set[Exception] = set()
 
         def _handle_event(event: Event) -> None:
             try:
                 custom_event = ValidatedMouseEvent(event, axes)
                 tooltip_manager.on_hover(custom_event)
 
-            except ValueError:
-                hover_box.set_visible(False)
+            except (TypeError, ValueError) as e:
+                nonlocal errors_flagged
 
-            except TypeError:
-                hover_box.set_visible(False)
+                if e not in errors_flagged:
+                    logger.warning(f"Error handling on-hover tooltip: {e}")
+                    errors_flagged.add(e)
 
-            except Exception:
                 hover_box.set_visible(False)
 
         figure.canvas.mpl_connect(
