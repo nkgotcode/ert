@@ -12,6 +12,7 @@ from matplotlib.lines import Line2D
 
 from ert.gui.tools.plot.plottery.plot_context import PlotType
 from ert.gui.tools.plot.plottery.plots.tooltip_manager import (
+    InvalidAxesError,
     ValidatedMouseEvent,
     create_tooltip_manager,
 )
@@ -218,19 +219,23 @@ class PlotTools:
             logger.warning(f"Failed to create tooltip manager: {e}")
             return
 
-        errors_flagged: set[Exception] = set()
+        errors_flagged: set[str] = set()
 
         def _handle_event(event: Event) -> None:
             try:
                 custom_event = ValidatedMouseEvent(event, axes)
                 tooltip_manager.on_hover(custom_event)
 
-            except (TypeError, ValueError) as e:
+            except (TypeError, ValueError, InvalidAxesError) as e:
                 nonlocal errors_flagged
-
-                if e not in errors_flagged:
-                    logger.warning(f"Error handling on-hover tooltip: {e}")
-                    errors_flagged.add(e)
+                error_message = str(e)
+                if error_message not in errors_flagged and not isinstance(
+                    e, InvalidAxesError
+                ):
+                    logger.warning(
+                        f"Error occured handling on-hover tooltip: {error_message}"
+                    )
+                    errors_flagged.add(error_message)
 
                 hover_box.set_visible(False)
 

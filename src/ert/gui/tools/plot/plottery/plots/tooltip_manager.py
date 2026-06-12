@@ -27,6 +27,9 @@ ShapeType = TypeVar("ShapeType")
 FALL_BACK_BBOX = Bbox.from_bounds(0, 0, 200, 200)
 
 
+class InvalidAxesError(Exception): ...
+
+
 class Point:
     """
     A simple class to represent a point in both coordinate and pixel space.
@@ -57,7 +60,7 @@ class ValidatedMouseEvent:
             raise TypeError(f"Expected a MouseEvent, got {type(event).__name__}")
 
         if event.inaxes is None or event.inaxes != axes:
-            raise ValueError("MouseEvent must have an associated Axes")
+            raise InvalidAxesError("MouseEvent must have an associated Axes")
 
         if event.xdata is None or event.ydata is None:
             raise ValueError("MouseEvent must have valid xy coordinates")
@@ -401,6 +404,4 @@ def create_tooltip_manager(
                     axes,
                 )
 
-    raise TypeError(
-        f"Invalid data type {type(data).__name__} for plot type {plot_type}"
-    )
+    raise TypeError(f"Invalid data type {type(data).__name__} for {plot_type} plot")
