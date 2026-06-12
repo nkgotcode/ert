@@ -1,18 +1,26 @@
+import threading
 from datetime import datetime, timedelta
 
 import numpy as np
 import polars as pl
 import pytest
 from PyQt6.QtWidgets import (
+    QLabel,
     QTreeWidget,
 )
 
 from ert.config import ErtConfig, ObservationType
 from ert.config.rft_config import RFTConfig
+from ert.ensemble_evaluator import state
+from ert.gui.experiments.view import run_status as run_status_module
+from ert.gui.experiments.view.realization import RealizationWidget
+from ert.gui.experiments.view.run_status import RunStatusView
 from ert.gui.tools.manage_experiments.storage_info_widget import (
     _EnsembleWidget,
     _EnsembleWidgetTabs,
 )
+from ert.run_models.event import FullSnapshotEvent, status_event_to_json
+from tests.ert import SnapshotBuilder
 
 
 def create_experiment_from_config(config: ErtConfig, storage):
@@ -755,3 +763,154 @@ def test_that_observations_are_identified_and_sorted_by_full_index_key(
     assert children == expected_name_order, (
         f"Expected observation names in order {expected_name_order}, but got {children}"
     )
+
+
+def _build_run_status_snapshot(iteration: int) -> FullSnapshotEvent:
+    return FullSnapshotEvent(
+        snapshot=SnapshotBuilder()
+        .add_fm_step(
+            fm_step_id="0",
+            index="0",
+            name="fm_step_0",
+            status=state.FORWARD_MODEL_STATE_FINISHED,
+        )
+        .build(
+            real_ids=["0", "1"],
+            status=state.REALIZATION_STATE_FINISHED,
+        ),
+        iteration_label=f"Running forecast for iteration: {iteration}",
+        total_iterations=1,
+        progress=1.0,
+        realization_count=2,
+        status_count={"Finished": 2},
+        iteration=iteration,
+    )
+
+
+def _persist_full_snapshot(experiment, iteration: int) -> None:
+    event = _build_run_status_snapshot(iteration)
+    path = experiment.status_snapshot_path(iteration)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(status_event_to_json(event), encoding="utf-8")
+
+
+def test_that_run_status_tab_shows_persisted_realizations_for_ensemble(qtbot, storage):
+    experiment = storage.create_experiment(name="exp")
+    ensemble = experiment.create_ensemble(name="default", ensemble_size=2, iteration=0)
+    _persist_full_snapshot(experiment, ensemble.iteration)
+
+    ensemble_widget = _EnsembleWidget()
+    ensemble_widget.setEnsemble(ensemble)
+    qtbot.addWidget(ensemble_widget)
+
+    ensemble_widget._tab_widget.setCurrentIndex(_EnsembleWidgetTabs.RUN_STATUS_TAB)
+
+    run_status_view = ensemble_widget._run_status_view
+    qtbot.waitUntil(
+        lambda: (
+            run_status_view._stack.currentWidget()
+            not in {run_status_view._placeholder, run_status_view._loading_label}
+        ),
+        timeout=5000,
+    )
+
+    realization_widget = run_status_view.findChild(RealizationWidget)
+    assert realization_widget is not None
+    assert realization_widget._real_list_model.rowCount() == 2
+
+
+def test_that_run_status_tab_shows_placeholder_when_no_snapshot_exists(qtbot, storage):
+    experiment = storage.create_experiment(name="exp")
+    ensemble = experiment.create_ensemble(name="default", ensemble_size=2, iteration=0)
+
+    ensemble_widget = _EnsembleWidget()
+    ensemble_widget.setEnsemble(ensemble)
+    qtbot.addWidget(ensemble_widget)
+
+    ensemble_widget._tab_widget.setCurrentIndex(_EnsembleWidgetTabs.RUN_STATUS_TAB)
+
+    run_status_view = ensemble_widget._run_status_view
+    qtbot.waitUntil(
+        lambda: (
+            run_status_view._stack.currentWidget() is not run_status_view._loading_label
+        ),
+        timeout=5000,
+    )
+    assert run_status_view._stack.currentWidget() is run_status_view._placeholder
+
+
+def test_that_run_status_view_ignores_superseded_snapshot_load(
+    qtbot, tmp_path, monkeypatch
+):
+    first_path = tmp_path / "snapshot_0.json"
+    second_path = tmp_path / "snapshot_1.json"
+    first_event = _build_run_status_snapshot(iteration=0)
+    second_event = _build_run_status_snapshot(iteration=1)
+    first_load_started = threading.Event()
+    release_first_load = threading.Event()
+
+    def load_snapshot(path):
+        if path == first_path:
+            first_load_started.set()
+            assert release_first_load.wait(timeout=5)
+            return first_event
+        return second_event
+
+    monkeypatch.setattr(run_status_module, "load_status_snapshot_event", load_snapshot)
+
+    run_status_view = RunStatusView()
+    qtbot.addWidget(run_status_view)
+
+    run_status_view.load_snapshot(first_path)
+    qtbot.waitUntil(first_load_started.is_set, timeout=5000)
+
+    run_status_view.load_snapshot(second_path)
+    qtbot.waitUntil(
+        lambda: (
+            run_status_view._stack.currentWidget()
+            not in {run_status_view._placeholder, run_status_view._loading_label}
+        ),
+        timeout=5000,
+    )
+
+    release_first_load.set()
+    qtbot.waitUntil(lambda: not run_status_view._load_jobs, timeout=5000)
+
+    label_texts = [label.text() for label in run_status_view.findChildren(QLabel)]
+    assert any("iteration 1" in text for text in label_texts)
+    assert not any("iteration 0" in text for text in label_texts)
+
+
+def test_that_reloading_the_same_snapshot_path_does_not_start_a_new_load(
+    qtbot, tmp_path, monkeypatch
+):
+    path = tmp_path / "snapshot_0.json"
+    load_call_count = 0
+
+    def load_snapshot(_):
+        nonlocal load_call_count
+        load_call_count += 1
+        return _build_run_status_snapshot(iteration=0)
+
+    monkeypatch.setattr(run_status_module, "load_status_snapshot_event", load_snapshot)
+
+    run_status_view = RunStatusView()
+    qtbot.addWidget(run_status_view)
+
+    run_status_view.load_snapshot(path)
+    qtbot.waitUntil(
+        lambda: (
+            run_status_view._stack.currentWidget()
+            not in {run_status_view._placeholder, run_status_view._loading_label}
+        ),
+        timeout=5000,
+    )
+    qtbot.waitUntil(lambda: not run_status_view._load_jobs, timeout=5000)
+    assert load_call_count == 1
+    content_after_first_load = run_status_view._content
+
+    run_status_view.load_snapshot(path)
+
+    assert load_call_count == 1
+    assert run_status_view._content is content_after_first_load
+    assert not run_status_view._load_jobs
