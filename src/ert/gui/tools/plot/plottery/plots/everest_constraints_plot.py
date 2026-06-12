@@ -72,6 +72,8 @@ class EverestConstraintsPlot:
 
         realizations = sorted(combined["realization"].unique())
 
+        line_data = []
+        line_labels = []
         for realization in realizations:
             data = combined[combined["realization"] == realization].sort_values(
                 "batch_id"
@@ -87,6 +89,8 @@ class EverestConstraintsPlot:
                 color=color,
                 markersize=4,
             )
+            line_data.append(lines)
+            line_labels.append(f"Realization {int(realization)}")
             if len(realizations) <= LEGEND_THRESHOLD:
                 config.add_legend_item(f"Realization {int(realization)}", lines[0])
 
@@ -121,6 +125,16 @@ class EverestConstraintsPlot:
             axes.set_ylim(ylim)
 
         axes.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+        PlotTools.labels_on_hover(
+            PlotType.LINE,
+            axes,
+            figure,
+            data=line_data,
+            labels=line_labels,
+            disable_values=True,
+            hover_color=config.next_color()[0],
+        )
 
         PlotTools.finalizePlot(
             plot_context,
