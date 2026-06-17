@@ -5,7 +5,7 @@ from typing import Generic, TypeVar, cast
 
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.backend_bases import Event, MouseEvent
+from matplotlib.backend_bases import MouseEvent
 from matplotlib.collections import PathCollection
 from matplotlib.container import BarContainer
 from matplotlib.figure import Figure
@@ -25,9 +25,6 @@ ShapeType = TypeVar("ShapeType")
 # A fallback bounding box with a width and height of 200px
 # in case the hover box has not been rendered yet and returns a degenerate bbox.
 FALL_BACK_BBOX = Bbox.from_bounds(0, 0, 200, 200)
-
-
-class InvalidAxesError(Exception): ...
 
 
 class Point:
@@ -55,21 +52,16 @@ class Point:
 
 
 class ValidatedMouseEvent:
-    def __init__(self, event: Event, axes: Axes) -> None:
-        if not isinstance(event, MouseEvent):
-            raise TypeError(f"Expected a MouseEvent, got {type(event).__name__}")
-
-        if event.inaxes is None or event.inaxes != axes:
-            raise InvalidAxesError("MouseEvent must have an associated Axes")
-
+    def __init__(self, event: MouseEvent, axes: Axes) -> None:
         if event.xdata is None or event.ydata is None:
             raise ValueError("MouseEvent must have valid xy coordinates")
 
+        self._event = event
         self.inaxes = event.inaxes
         self.position = Point((event.xdata, event.ydata), axes)
 
     def as_mpl(self) -> MouseEvent:
-        return cast(MouseEvent, self.position)
+        return self._event
 
 
 class ToolTipManager(ABC, Generic[PlotDataType, ShapeType]):

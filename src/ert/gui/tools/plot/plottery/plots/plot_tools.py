@@ -5,14 +5,13 @@ import math
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.ticker as mticker
-from matplotlib.backend_bases import Event
+from matplotlib.backend_bases import Event, MouseEvent
 from matplotlib.collections import PathCollection
 from matplotlib.container import BarContainer
 from matplotlib.lines import Line2D
 
 from ert.gui.tools.plot.plottery.plot_context import PlotType
 from ert.gui.tools.plot.plottery.plots.tooltip_manager import (
-    InvalidAxesError,
     ValidatedMouseEvent,
     create_tooltip_manager,
 )
@@ -219,25 +218,21 @@ class PlotTools:
             logger.warning(f"Failed to create tooltip manager: {e}")
             return
 
-        errors_flagged: set[str] = set()
+        wrong_event_type_flagged = False
 
         def _handle_event(event: Event) -> None:
-            try:
-                custom_event = ValidatedMouseEvent(event, axes)
-                tooltip_manager.on_hover(custom_event)
-
-            except (TypeError, ValueError, InvalidAxesError) as e:
-                nonlocal errors_flagged
-                error_message = str(e)
-                if error_message not in errors_flagged and not isinstance(
-                    e, InvalidAxesError
-                ):
-                    logger.warning(
-                        f"Error occured handling on-hover tooltip: {error_message}"
-                    )
-                    errors_flagged.add(error_message)
-
+            if not isinstance(event, MouseEvent):
+                nonlocal wrong_event_type_flagged
+                if not wrong_event_type_flagged:
+                    logger.warning(f"Expected a MouseEvent, got {type(event).__name__}")
+                    wrong_event_type_flagged = True
+                return
+            if event.inaxes != axes:
                 hover_box.set_visible(False)
+                figure.canvas.draw_idle()
+                return
+            custom_event = ValidatedMouseEvent(event, axes)
+            tooltip_manager.on_hover(custom_event)
 
         figure.canvas.mpl_connect(
             "motion_notify_event",

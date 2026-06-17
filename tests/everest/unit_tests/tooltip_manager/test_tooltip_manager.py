@@ -1,3 +1,4 @@
+import pytest
 from matplotlib import pyplot as plt
 from matplotlib.backend_bases import KeyEvent, MouseEvent
 
@@ -170,7 +171,5 @@ def test_that_tooltip_manager_catches_invalid_event_coordinates(plot_data_1D, ca
     event.xdata = None
     event.ydata = None
 
-    ax.figure.canvas.callbacks.process("motion_notify_event", event)
-
-    assert len(caplog.records) == 1
-    assert "MouseEvent must have valid xy coordinates" in caplog.records[0].message
+    with pytest.raises(ValueError, match="MouseEvent must have valid xy coordinates"):
+        ax.figure.canvas.callbacks.process("motion_notify_event", event)
