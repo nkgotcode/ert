@@ -105,9 +105,7 @@ class ToolTipManager(ABC, Generic[PlotDataType, ShapeType]):
         return math.hypot(p.x - q.x, p.y - q.y)
 
     def set_hover_box_position(self, event: ValidatedMouseEvent) -> None:
-        """
-        Set the position of the hover box, ensuring it stays within the axes bounds.
-        """
+        """Set the position of the hover box, ensuring it stays within the axes bounds."""
         axes_bbox = self.axes.bbox
         width, height = self.hover_box.get_window_extent().size
 
